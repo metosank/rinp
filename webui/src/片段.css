@@ -1,0 +1,98 @@
+
+
+
+
+button,select,textarea,input:not([type="image" i], [type="range" i], [type="checkbox" i], [type="radio" i]){
+	box-sizing: border-box;
+	vertical-align: middle;
+	background-color: var(--填充背景);
+	border: 1px solid var(--边框颜色);
+	border-radius: 6px;
+	font-size: 14px;
+	height: 32px;
+	margin: 0;
+}
+
+/*可点击的元素*/
+button,select,input:has([type="range" i], [type="checkbox" i], [type="radio" i]){
+	cursor: pointer;
+}
+
+/*输入元素*/
+textarea,input:not([type="range" i], [type="checkbox" i], [type="radio" i]){
+	cursor: text;
+	font-family: inherit;
+	padding: 8px 6px;
+	::placeholder {
+		font-family: inherit;
+		color: var(--边框颜色);
+	}
+}
+
+
+input[type="number"]{
+	padding-right: 2px;
+}
+
+button,select,input {
+	transition-duration: .3s;
+	transition-timing-function: ease;
+	transition-property: box-shadow, filter, opacity;
+
+	&:not(:disabled){
+		&:hover {
+			filter: brightness(1.05);
+		}
+
+		&:active {
+			filter: brightness(0.95);
+		}
+	}
+
+	&:disabled {
+		cursor: not-allowed;
+		opacity: 0.5;
+	}
+}
+
+
+button{
+	padding: 0 12px;
+	line-height: 1;
+	color: var(--主题色);
+	background-color: transparent;
+	border: 1px solid var(--主题色);
+
+
+	&.主要按钮{
+		color: white;
+		background-color: var(--主题色);
+	}
+
+	&.重要按钮{
+		color: #e6cf22;
+		border-color: #e6cf22;
+	}
+
+	&.危险按钮{
+		color: #e74c3c;
+		border-color: #e74c3c;
+	}
+}
+
+
+
+
+
+
+textarea{
+	resize: none;
+	height: 140px;
+	display: block;
+	width: 100%;
+	&:focus{
+		outline: 2px solid var(--主题色);
+		outline-offset: 1px;
+	}
+}
+

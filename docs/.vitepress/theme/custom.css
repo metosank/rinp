@@ -1,0 +1,7 @@
+
+.vp-doc img.inline-icon,
+.vp-doc .inline-icon img {
+  display: inline-block;
+  margin: 0;
+  vertical-align: middle;
+}

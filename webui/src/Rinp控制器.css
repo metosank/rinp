@@ -1,0 +1,49 @@
+
+label{
+    display: block;
+    font-size: 14px;
+    font-weight: 650;
+    margin: 12px 0 4px;
+}
+
+
+.输入flex{
+    display: flex;
+    width: 100%;
+    >input{
+        flex: 1;
+    }
+}
+
+#api端点输入框{
+    max-width: 400px;
+}
+
+#延迟输入框{
+    width: 60px;
+}
+
+.输入flex{
+    gap: 6px;
+}
+
+.flex内文本{
+	margin: 0;
+	box-sizing: border-box;
+	font-size: 14px;
+	height: 32px;
+	font-family: inherit;
+	padding: 0;
+    white-space: pre;
+}
+
+input,textarea,.输入flex,.其他操作按钮容器{
+    margin-top: 4px;
+    margin-bottom: 4px;
+}
+
+.其他操作按钮容器{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}

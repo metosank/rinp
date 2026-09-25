@@ -1,0 +1,90 @@
+name: 构建和发布
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    name: 构建
+    runs-on: ubuntu-26.04
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Node js
+        uses: actions/setup-node@v7
+
+      - name: 安装前端依赖
+        working-directory: webui
+        run: npm ci
+
+      - name: 安装cpp构建工具
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64 make
+
+      - name: 构建
+        run: ./b.sh
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v7
+        with:
+          name: rinp-exe-artifact
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    name: 发布
+    needs: build
+    permissions:
+      contents: write
+    runs-on: ubuntu-26.04
+    steps:
+      - name: 下载构建产物
+        uses: actions/download-artifact@v7
+        with:
+          name: rinp-exe-artifact
+          path: dist
+
+      - name: 发布
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          files: dist/*
+
+  deploy-pages:
+    name: 部署到Cloudflare Pages
+    needs: build
+    runs-on: ubuntu-26.04
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v7
+
+      - name: 安装 Node js
+        uses: actions/setup-node@v7
+
+      - name: 安装npm依赖
+        working-directory: docs
+        run: npm ci
+
+      - name: 构建文档
+        working-directory: docs
+        run: npm run docs:build
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v7
+        with:
+          name: rinp-exe-artifact
+          path: docs/.vitepress/dist/latest
+          
+      - name: 部署到cloudflare pages
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: docs
+          command: pages deploy .vitepress/dist --branch=main --project-name=${{ vars.CLOUDFLARE_PROJECT_NAME }}
+

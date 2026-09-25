@@ -1,0 +1,23 @@
+
+
+:root{
+    --主题色: #3498db;
+    --边框颜色: #cbb;
+    --填充背景: #fff;
+}
+
+body {
+	max-width: 680px;
+	margin: 0 auto;
+	padding: 32px 18px 48px;
+    background: color-mix(in srgb, var(--主题色) 5%, #fff);
+}
+
+test-result-element{
+    display: block;
+    background: #fff;
+    border: 1px solid #d8e1dd;
+    border-radius: 8px;
+    padding: 12px 24px 20px;
+    box-shadow: 0 10px 30px #233d3514;
+}

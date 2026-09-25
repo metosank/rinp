@@ -1,0 +1,19 @@
+{
+  "name": "rinp-webui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite",
+    "minify-svg": "svgo -i ../icon/f.svg -o ./f.min.svg --config=svgo.config.mjs"
+  },
+  "devDependencies": {
+    "html-minifier-terser": "^7.2.0",
+    "magic-string": "^1.3.1",
+    "strip-literal": "^4.0.0",
+    "svgo": "^4.1.0",
+    "vite": "^7.1.5",
+    "vite-plugin-html": "^3.2.2",
+    "vite-plugin-singlefile": "^2.3.0"
+  }
+}

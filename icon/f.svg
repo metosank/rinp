@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"
+     fill="none" stroke="#3498db" stroke-width="1"
+     stroke-linecap="round" stroke-linejoin="round">
+  <!-- 遮罩：在夹子和纸飞机周围挖出空隙，避免线条互相穿插 -->
+  <mask id="send-clipboard-mask">
+    <rect x="0" y="0" width="24" height="24" fill="#fff"/>
+    <!-- 顶部夹子的挖空区（比夹子略大） -->
+    <rect x="9" y="3" width="6" height="2" rx="1.2"
+          fill="#000" stroke="#000" stroke-width="2"/>
+    <!-- 纸飞机的挖空区（比飞机略大，形成间隔） -->
+    <path d="M21.3 10.8 L17.6 20.8 L15.7 16.4 L11.3 14.3 Z"
+          fill="#000" stroke="#000" stroke-width="2.8"/>
+  </mask>
+
+  <!-- 剪切板主体 + 文字线（被遮罩裁出缺口） -->
+  <g mask="url(#send-clipboard-mask)">
+    <rect x="5" y="4" width="14" height="17" rx="2"/>
+    <path d="M8.5 9h7 M8.5 12h7 M8.5 17h3"/>
+  </g>
+
+  <!-- 顶部夹子 -->
+  <rect x="9" y="3" width="6" height="2" rx="1.2"/>
+
+  <!-- 纸飞机（朝右上），含中间折线 -->
+  <path d="M21.3 10.8 L17.6 20.8 L15.7 16.4 L11.3 14.3 Z"/>
+  <path d="M21.3 10.8 L15.7 16.4"/>
+</svg>
