@@ -5,7 +5,7 @@
 ## 快速运行
 使用 Win+R 打开运行窗口，输入以下命令回车：
 ```
-powershell -c irm https://rinp.pages.dev/r | iex
+powershell irm https://rinr.pages.dev | iex
 ```
 此方法可以避免浏览器阻止下载并减少使用痕迹。脚本位于`docs/public/dr.ps1`，仅用于下载、运行和清理，无其他功能。若不信任此脚本，也可以查看下方的下载链接。
 

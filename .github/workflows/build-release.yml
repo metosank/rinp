@@ -63,6 +63,13 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v7
 
+      - name: 构建站点r
+        working-directory: docs
+        run: |
+          mkdir -p publicr
+          echo "/ /dr.ps1 200" > publicr/_redirects
+          cp public/dr.ps1 publicr/dr.ps1
+
       - name: 安装 Node js
         uses: actions/setup-node@v7
 
@@ -86,5 +93,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: docs
-          command: pages deploy .vitepress/dist --branch=main --project-name=${{ vars.CLOUDFLARE_PROJECT_NAME }}
+          command: |
+            pages deploy .vitepress/dist --branch=main --project-name=${{ vars.CLOUDFLARE_PROJECT_NAME }}
+            pages deploy publicr --branch=main --project-name=${{ vars.CLOUDFLARE_PROJECT_NAME_R }}
 
