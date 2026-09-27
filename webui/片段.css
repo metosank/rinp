@@ -4,7 +4,7 @@
 
 button,select,textarea,input:not([type="image" i], [type="range" i], [type="checkbox" i], [type="radio" i]){
 	box-sizing: border-box;
-	vertical-align: middle;
+	vertical-align: baseline;
 	background-color: var(--填充背景);
 	border: 1px solid var(--边框颜色);
 	border-radius: 6px;

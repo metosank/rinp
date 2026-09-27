@@ -13,7 +13,7 @@ body {
     background: color-mix(in srgb, var(--主题色) 5%, #fff);
 }
 
-test-result-element{
+rinp-controller-element{
     display: block;
     background: #fff;
     border: 1px solid #d8e1dd;

@@ -13,8 +13,8 @@ export class 操作已触发 extends CustomEvent {}
 
 export class Rinp控制器元素 extends 基类带影子元素 {
 
-    static 标签名称='test-result-element';
-    static css列表=__u2css(import.meta.url,'./片段.css','./Rinp控制器.css');
+    static 标签名称='rinp-controller-element';
+    static css列表=__u2css(import.meta.url,'../片段.css','./Rinp控制器.css');
 
     constructor() {
         super();
@@ -232,8 +232,13 @@ export class Rinp控制器元素 extends 基类带影子元素 {
         }
     }
 
-    async 发送文本() {
-        const 文本 = this.输入文本输入框.value;
+    /**
+     * @param {string} [文本]
+     */
+    async 发送文本(文本) {
+        if(文本===undefined){
+            文本 = this.输入文本输入框.value;
+        }
         await this.api.发送文本(文本, this.输入延迟);
         this.状态.textContent = '文本已发送';
     }

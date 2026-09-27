@@ -3,7 +3,10 @@ label{
     display: block;
     font-size: 14px;
     font-weight: 650;
-    margin: 12px 0 4px;
+    margin: 0 0 4px;
+    &:not(:first-child){
+        margin-top: 12px;
+    }
 }
 
 
@@ -39,7 +42,9 @@ label{
 
 input,textarea,.输入flex,.其他操作按钮容器{
     margin-top: 4px;
-    margin-bottom: 4px;
+    &:not(:last-child){
+        margin-bottom: 4px;
+    }
 }
 
 .其他操作按钮容器{
