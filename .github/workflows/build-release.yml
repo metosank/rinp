@@ -38,6 +38,7 @@ jobs:
 
   release:
     name: 发布
+    if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     permissions:
       contents: write
