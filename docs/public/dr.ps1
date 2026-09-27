@@ -1,7 +1,7 @@
 
 # 清理 RunMRU 中的记录
 $runMruPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU"
-$tokenKeyword = "rinp"
+$tokenKeywords = @("rinp", "rinr")
 
 try {
     if (Test-Path $runMruPath) {
@@ -10,7 +10,7 @@ try {
 
         Get-ItemProperty -Path $runMruPath | ForEach-Object {
             $_.PSObject.Properties | Where-Object {
-                $_.Name -match '^[a-z]$' -and $_.Value -like "*$tokenKeyword*"
+                $_.Name -match '^[a-z]$' -and ($_.Value -like "*$($tokenKeywords[0])*" -or $_.Value -like "*$($tokenKeywords[1])*")
             } | ForEach-Object {
                 $itemsToRemove += $_.Name
             }
