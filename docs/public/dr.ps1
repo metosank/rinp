@@ -36,4 +36,14 @@ try {
 
 
 # 下载和执行
-$f="$env:TEMP\rinp.exe"; irm https://rinp.pages.dev/d -OutFile $f; if(Test-Path $f){& $f -d}
+$f="$env:TEMP\rinp.exe"
+
+irm https://rinp.pages.dev/d -OutFile $f;
+if(Test-Path $f){
+& $f -d
+Write-Host "已运行，请查看任务托盘"
+}else{
+Write-Host "下载失败"
+}
+Write-Host "此窗口将在5秒后关闭，也可手动关闭"
+Start-Sleep -Seconds 5
