@@ -6,6 +6,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <bcrypt.h>
 
 #include <cstdio>
 #include <cstdlib>
@@ -33,35 +34,63 @@
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "bcrypt.lib")
 
 #ifndef MB_ERR_INVALID_CHARS
 #define MB_ERR_INVALID_CHARS 0x08000000
 #endif
 
-static std::string makeSecretPath() {
-    static const char alphabet[] = "abcdefghijkmnpqrstuvwxyz23456789";
-    static constexpr size_t alphabetLen = sizeof(alphabet) - 1;
-
-    std::random_device rd;
-    std::mt19937 rng(rd());
-    std::uniform_int_distribution<size_t> dist(0, alphabetLen - 1);
-
-    std::string path;
-    path.reserve(4);
-    path.push_back('/');
-
-    for (int i = 0; i < 3; ++i) {
-        path.push_back(alphabet[dist(rng)]);
-    }
-
-    return path;
+static bool fillRandomBytes(void* buffer, size_t size) {
+    return BCryptGenRandom(
+        nullptr,
+        static_cast<PUCHAR>(buffer),
+        static_cast<ULONG>(size),
+        BCRYPT_USE_SYSTEM_PREFERRED_RNG
+    ) == 0;
 }
 
-static int makeRandomPort(int start, int end) {
-    std::random_device rd;
-    std::mt19937 rng(rd());
-    std::uniform_int_distribution<int> dist(start, end);
-    return dist(rng);
+static bool RandomRange(uint32_t lo, uint32_t hi, uint32_t* outValue) {
+    uint32_t range = hi - lo + 1;
+    if (range == 0) return lo;
+    uint32_t limit = UINT32_MAX - (UINT32_MAX % range);
+    uint32_t val;
+    do {
+        if(!fillRandomBytes(&val, sizeof(val))) {
+            return false;
+        }
+    } while (val >= limit);
+    *outValue = lo + val % range;
+    return true;
+}
+
+static bool makeSecretPath(std::string& path) {
+    static const char alphabet[] = "abcdefghijkmnpqrstuvwxyz23456789";
+    static constexpr size_t alphabetLen = sizeof(alphabet) - 1;
+    static constexpr size_t pathLength = 4;
+
+    path.clear();
+    path.reserve(pathLength+1);
+    path.push_back('/');
+
+    for (int i = 0; i < pathLength; ++i) {
+        uint32_t value = 0;
+        if (!RandomRange(0, alphabetLen - 1, &value)) {
+            return false;
+        }
+        path.push_back(alphabet[value]);
+    }
+
+    return true;
+}
+
+static bool makeRandomPort(int start, int end, int& port) {
+    if (start > end) {
+        return false;
+    }
+    if(!RandomRange(start, end, reinterpret_cast<uint32_t*>(&port))) {
+        return false;
+    }
+    return true;
 }
 
 static bool parsePortValue(const char* value, int& port) {
@@ -217,12 +246,14 @@ int main(int argc, char** argv) {
 
     if (hasSpecifiedPort) {
         port = specifiedPort;
-    } else {
-        port = makeRandomPort(portStart, portEnd);
+    } else if (!makeRandomPort(portStart, portEnd, port)) {
+        win32::showError("无法生成随机端口。");
+        return 1;
     }
 
-    if (!hasSpecifiedPath) {
-        secretPath = makeSecretPath();
+    if (!hasSpecifiedPath && !makeSecretPath(secretPath)) {
+        win32::showError("无法生成随机路径。");
+        return 1;
     }
 
     HANDLE instanceMutex = CreateMutexW(
