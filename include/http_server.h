@@ -1,11 +1,10 @@
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <functional>
-#include <mutex>
 #include <string>
-#include <thread>
-#include <vector>
+#include <unordered_map>
 
 #include <winsock2.h>
 
@@ -33,19 +32,28 @@ public:
     bool isRunning() const;
 
 private:
-    void handleClient(SOCKET client);
+    struct ClientState {
+        std::string buffer;
+        size_t expectedSize = 0;
+        std::string pendingSend;
+        size_t sentOffset = 0;
+        DWORD lastActivity = 0;
+    };
+
+    void acceptClients();
+    void handleReadable(SOCKET client, ClientState& state);
+    void handleWritable(SOCKET client, ClientState& state);
+    bool tryProcessRequest(SOCKET client, ClientState& state);
+    void queueSend(SOCKET client, ClientState& state, std::string data);
     void removeClient(SOCKET client);
-    bool sendAll(SOCKET client, const char* data, size_t length);
-    void sendResponse(
-        SOCKET client,
+
+    void buildResponse(
+        std::string& out,
         const std::string& status,
         const std::string& contentType,
         const std::string& body
     );
-    
-    void sendGzipHtml(
-        SOCKET client
-    );
+    void buildGzipResponse(std::string& out);
 
     static bool parseRequestLine(
         const std::string& header,
@@ -60,7 +68,6 @@ private:
     JobHandler jobHandler_;
     ExitHandler exitHandler_;
     SOCKET listener_ = INVALID_SOCKET;
-    std::mutex clientsMutex_;
-    std::vector<SOCKET> clients_;
-    std::vector<std::thread> clientThreads_;
+    std::atomic<bool> running_{false};
+    std::unordered_map<SOCKET, ClientState> clients_;
 };
