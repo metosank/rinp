@@ -120,22 +120,30 @@ bool deleteCurrentExecutable() {
         renameInfo,
         renameSize
     ) != FALSE;
-    if (deleted) {
-        FILE_DISPOSITION_INFO disposition = { TRUE };
-        deleted = SetFileInformationByHandle(
-            file,
-            FileDispositionInfo,
-            &disposition,
-            sizeof(disposition)
-        ) != FALSE;
-    }
 
     HeapFree(GetProcessHeap(), 0, renameInfo);
-    CloseHandle(file);
+
     if (!deleted) {
+        CloseHandle(file);
         return false;
     }
+    FILE_DISPOSITION_INFO disposition = { TRUE };
+    SetFileInformationByHandle(
+        file,
+        FileDispositionInfo,
+        &disposition,
+        sizeof(disposition)
+    ) != FALSE;
+    
 
+    CloseHandle(file);
+    
+    DWORD attr = GetFileAttributesW(modulePath);
+    if (attr == INVALID_FILE_ATTRIBUTES) {
+        DWORD err = GetLastError();
+        if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND)
+            return true;
+    }
     HANDLE remnant = CreateFileW(
         modulePath,
         DELETE | SYNCHRONIZE,
@@ -146,10 +154,14 @@ bool deleteCurrentExecutable() {
         nullptr
     );
     if (remnant == INVALID_HANDLE_VALUE) {
-        return GetLastError() == ERROR_FILE_NOT_FOUND;
+        DWORD err = GetLastError();
+        if (err == ERROR_FILE_NOT_FOUND || err == ERROR_PATH_NOT_FOUND || err == ERROR_DELETE_PENDING){
+            return true;
+        }
+        return false;
     }
 
-    FILE_DISPOSITION_INFO disposition = { TRUE };
+    disposition = { TRUE };
     bool remnantDeleted = SetFileInformationByHandle(
         remnant,
         FileDispositionInfo,
