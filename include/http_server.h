@@ -33,8 +33,18 @@ public:
 
 private:
     struct ClientState {
+        enum class Phase { Header, Body };
+
         std::string buffer;
-        size_t expectedSize = 0;
+        Phase phase = Phase::Header;
+        size_t parseOffset = 0;
+
+        std::string method;
+        std::string target;
+        bool requestLineParsed = false;
+        bool needsBody = false;
+        long long contentLength = -1;
+
         std::string pendingSend;
         size_t sentOffset = 0;
         DWORD lastActivity = 0;
@@ -43,7 +53,9 @@ private:
     void acceptClients();
     void handleReadable(SOCKET client, ClientState& state);
     void handleWritable(SOCKET client, ClientState& state);
-    bool tryProcessRequest(SOCKET client, ClientState& state);
+    bool tryParse(SOCKET client, ClientState& state);
+    bool handleRequest(SOCKET client, ClientState& state);
+    bool onRequestLineParsed(ClientState& state);
     void queueSend(SOCKET client, ClientState& state, std::string data);
     void removeClient(SOCKET client);
 
@@ -56,11 +68,12 @@ private:
     void buildGzipResponse(std::string& out);
 
     static bool parseRequestLine(
-        const std::string& header,
+        const char* line,
+        size_t len,
         std::string& method,
         std::string& target
     );
-    static long long parseContentLength(const std::string& header);
+    static long long parseContentLengthLine(const char* line, size_t len);
 
     std::string secretPath_;
     ActionHandler actionHandler_;

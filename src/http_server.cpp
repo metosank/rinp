@@ -22,6 +22,8 @@ constexpr std::string_view kCorsHeaders =
     "Access-Control-Max-Age: 3600\r\n"
     "Connection: close\r\n\r\n";
 
+constexpr size_t kCorsHeadersSize = kCorsHeaders.size();
+
 } // namespace
 
 HttpServer::HttpServer(
@@ -189,12 +191,7 @@ void HttpServer::handleReadable(SOCKET client, ClientState& state) {
         return;
     }
 
-    if (state.buffer.size() > MAX_HEADER + MAX_BODY) {
-        removeClient(client);
-        return;
-    }
-
-    if (tryProcessRequest(client, state)) {
+    if (!tryParse(client, state)) {
         removeClient(client);
     }
 }
@@ -216,65 +213,96 @@ void HttpServer::handleWritable(SOCKET client, ClientState& state) {
     }
 }
 
-bool HttpServer::tryProcessRequest(SOCKET client, ClientState& state) {
-    size_t headerEnd = state.buffer.find("\r\n\r\n");
-    if (headerEnd == std::string::npos) {
-        return state.buffer.size() <= MAX_HEADER;
+bool HttpServer::tryParse(SOCKET client, ClientState& state) {
+    if (state.phase == ClientState::Phase::Header) {
+        while (true) {
+            size_t lineEnd = state.buffer.find("\r\n", state.parseOffset);
+            if (lineEnd == std::string::npos) {
+                if (state.buffer.size() > MAX_HEADER) return false;
+                return true;
+            }
+
+            size_t lineLen = lineEnd - state.parseOffset;
+
+            // 解析到空行，表示请求头结束
+            if (lineLen == 0) {
+                size_t bodyStart = lineEnd + 2;
+                state.buffer.erase(0, bodyStart);
+                state.parseOffset = 0;
+
+                if (state.needsBody) {
+                    if (state.contentLength < 0 || (unsigned long long)state.contentLength > MAX_BODY) {
+                        std::string response;
+                        buildResponse(response, "400 Bad Request", "text/plain; charset=utf-8", "400");
+                        queueSend(client, state, std::move(response));
+                        return true;
+                    }
+                    state.phase = ClientState::Phase::Body;
+                    break;
+                }
+
+                return handleRequest(client, state);
+            }
+
+            if (!state.requestLineParsed) {
+                if (!parseRequestLine(state.buffer.data() + state.parseOffset, lineLen,
+                                      state.method, state.target)) return false;
+                state.requestLineParsed = true;
+                if (!onRequestLineParsed(state)) return false;
+                state.needsBody = (state.method == "POST");
+            } else if (state.needsBody && state.contentLength < 0) {
+                long long cl = parseContentLengthLine(
+                    state.buffer.data() + state.parseOffset, lineLen);
+                if (cl >= 0) state.contentLength = cl;
+            }
+
+            state.parseOffset = lineEnd + 2;
+        }
     }
 
-    std::string header = state.buffer.substr(0, headerEnd);
-    std::string method;
-    std::string target;
-    if (!parseRequestLine(header, method, target)) {
+    if (state.buffer.size() < (size_t)state.contentLength) {
+        if (state.buffer.size() > MAX_BODY) return false;
         return true;
     }
 
-    if (target != secretPath_) {
-        return true;
-    }
+    return handleRequest(client, state);
+}
 
+bool HttpServer::onRequestLineParsed(ClientState& state) {
+    if (state.target != secretPath_) return false;
+    return true;
+}
+
+bool HttpServer::handleRequest(SOCKET client, ClientState& state) {
     std::string response;
 
-    if (method == "OPTIONS") {
+    if (state.method == "OPTIONS") {
         buildResponse(response, "204 No Content", "text/plain; charset=utf-8", "");
         queueSend(client, state, std::move(response));
         return true;
     }
 
-    if (method == "HEAD") {
+    if (state.method == "HEAD") {
         buildResponse(response, "200 OK", "text/html; charset=utf-8", "");
         queueSend(client, state, std::move(response));
         return true;
     }
 
-    if (method == "GET") {
+    if (state.method == "GET") {
         buildGzipResponse(response);
         queueSend(client, state, std::move(response));
         return true;
     }
 
-    if (method != "POST") {
-        buildResponse(response, "405 Method Not Allowed", "text/plain; charset=utf-8", "405 Method Not Allowed");
+    if (state.method != "POST") {
+        buildResponse(response, "405 Method Not Allowed", "text/plain; charset=utf-8",
+                      "405 Method Not Allowed");
         queueSend(client, state, std::move(response));
         return true;
     }
 
-    long long contentLength = parseContentLength(header);
-    if (contentLength < 0 || (unsigned long long)contentLength > MAX_BODY) {
-        buildResponse(response, "400 Bad Request", "text/plain; charset=utf-8", "400");
-        queueSend(client, state, std::move(response));
-        return true;
-    }
-
-    size_t bodyStart = headerEnd + 4;
-    size_t totalExpected = bodyStart + (size_t)contentLength;
-    if (state.buffer.size() < totalExpected) {
-        state.expectedSize = totalExpected;
-        return false;
-    }
-
-    const char* body = state.buffer.data() + bodyStart;
-    size_t bodyLength = (size_t)contentLength;
+    const char* body = state.buffer.data();
+    size_t bodyLength = state.buffer.size();
 
     if (bodyLength < 1) {
         buildResponse(response, "400 Bad Request", "text/plain; charset=utf-8", "400");
@@ -296,7 +324,8 @@ bool HttpServer::tryProcessRequest(SOCKET client, ClientState& state) {
         if (action == 0x7f) {
             std::string clipboardText;
             if (!clipboardHandler_ || !clipboardHandler_(clipboardText)) {
-                buildResponse(response, "503 Service Unavailable", "text/plain; charset=utf-8", "clipboard unavailable");
+                buildResponse(response, "503 Service Unavailable", "text/plain; charset=utf-8",
+                              "clipboard unavailable");
                 queueSend(client, state, std::move(response));
                 return true;
             }
@@ -331,7 +360,8 @@ bool HttpServer::tryProcessRequest(SOCKET client, ClientState& state) {
         return true;
     }
     if (!jobHandler_(std::move(job))) {
-        buildResponse(response, "503 Service Unavailable", "text/plain; charset=utf-8", "server is stopping");
+        buildResponse(response, "503 Service Unavailable", "text/plain; charset=utf-8",
+                      "server is stopping");
         queueSend(client, state, std::move(response));
         return true;
     }
@@ -353,7 +383,7 @@ void HttpServer::buildResponse(
     const std::string& contentType,
     const std::string& body
 ) {
-    out.reserve(256 + body.size());
+    out.reserve(9+3+18 + 2+contentType.size() + kCorsHeadersSize + body.size());
     out.append("HTTP/1.1 ");
     out.append(status);
     out.append("\r\nContent-Type: ");
@@ -380,57 +410,46 @@ void HttpServer::buildGzipResponse(std::string& out) {
 }
 
 bool HttpServer::parseRequestLine(
-    const std::string& header,
+    const char* line,
+    size_t len,
     std::string& method,
     std::string& target
 ) {
-    size_t firstSpace = header.find(' ');
-    if (firstSpace == std::string::npos) return false;
-    size_t secondSpace = header.find(' ', firstSpace + 1);
-    if (secondSpace == std::string::npos) return false;
+    const char* firstSpace = (const char*)std::memchr(line, ' ', len);
+    if (!firstSpace) return false;
+    size_t firstPos = (size_t)(firstSpace - line);
 
-    method = header.substr(0, firstSpace);
-    target = header.substr(firstSpace + 1, secondSpace - firstSpace - 1);
+    const char* secondSpace = (const char*)std::memchr(
+        firstSpace + 1, ' ', len - firstPos - 1);
+    if (!secondSpace) return false;
+    size_t secondPos = (size_t)(secondSpace - line);
+
+    method.assign(line, firstPos);
+    target.assign(line + firstPos + 1, secondPos - firstPos - 1);
     return true;
 }
 
-long long HttpServer::parseContentLength(const std::string& header) {
-    const char* fieldName = "content-length:";
-    size_t fieldLen = std::strlen(fieldName);
+long long HttpServer::parseContentLengthLine(const char* line, size_t len) {
+    static const char kField[] = "content-length:";
+    constexpr size_t kFieldLen = sizeof(kField) - 1;
 
-    size_t pos = 0;
-    while (pos < header.size()) {
-        size_t lineEnd = header.find("\r\n", pos);
-        if (lineEnd == std::string::npos) lineEnd = header.size();
+    if (len <= kFieldLen) return -1;
 
-        size_t lineLen = lineEnd - pos;
-        if (lineLen > fieldLen) {
-            bool match = true;
-            for (size_t i = 0; i < fieldLen; ++i) {
-                if (std::tolower((unsigned char)header[pos + i]) != fieldName[i]) {
-                    match = false;
-                    break;
-                }
-            }
-            if (match) {
-                size_t valuePos = pos + fieldLen;
-                while (valuePos < lineEnd && (header[valuePos] == ' ' || header[valuePos] == '\t')) {
-                    ++valuePos;
-                }
-                long long value = 0;
-                bool hasValue = false;
-                while (valuePos < lineEnd && std::isdigit((unsigned char)header[valuePos])) {
-                    value = value * 10 + (header[valuePos] - '0');
-                    hasValue = true;
-                    ++valuePos;
-                    if (value > 1000000000LL) break;
-                }
-                return hasValue ? value : -1;
-            }
-        }
-
-        pos = lineEnd + 2;
+    for (size_t i = 0; i < kFieldLen; ++i) {
+        if (std::tolower((unsigned char)line[i]) != kField[i]) return -1;
     }
 
-    return -1;
+    size_t pos = kFieldLen;
+    while (pos < len && (line[pos] == ' ' || line[pos] == '\t')) ++pos;
+
+    long long value = 0;
+    bool hasValue = false;
+    while (pos < len && std::isdigit((unsigned char)line[pos])) {
+        value = value * 10 + (line[pos] - '0');
+        hasValue = true;
+        ++pos;
+        if (value > 1000000000LL) break;
+    }
+
+    return hasValue ? value : -1;
 }
