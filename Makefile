@@ -1,7 +1,9 @@
 CXX ?= g++
 WINDRES ?= x86_64-w64-mingw32-windres
 
-CXXFLAGS ?= -std=c++20 -O2 -pipe -Iinclude
+export APP_VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
+
+CXXFLAGS ?= -std=c++20 -O2 -pipe -Iinclude -DAPP_VERSION=\"$(APP_VERSION)\"
 LDFLAGS ?= -s -static -mwindows -Wl,--no-insert-timestamp
 LDLIBS ?= -lws2_32 -luser32 -lshell32 -lbcrypt
 

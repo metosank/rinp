@@ -13,11 +13,19 @@ body {
     background: color-mix(in srgb, var(--主题色) 5%, #fff);
 }
 
-rinp-controller-element{
+.外框元素{
     display: block;
     background: #fff;
     border: 1px solid #d8e1dd;
     border-radius: 8px;
     padding: 12px 24px 20px;
     box-shadow: 0 10px 30px #233d3514;
+}
+
+.底部信息{
+    text-align: center;
+    margin-top: 24px;
+    color: #aaa;
+    font-size: 14px;
+    font-family: "Microsoft YaHei", "微软雅黑", sans-serif;
 }

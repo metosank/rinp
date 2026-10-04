@@ -6,6 +6,13 @@
 
 #include <cstring>
 
+#ifndef APP_VERSION
+#define APP_VERSION "dev"
+#endif
+
+#define WIDEN_(x) L##x
+#define WIDEN(x)  WIDEN_(x)
+
 namespace {
 constexpr UINT WM_TRAYICON = WM_APP + 1;
 constexpr UINT WM_TRAY_SET_VISIBILITY = WM_APP + 2;
@@ -29,7 +36,8 @@ constexpr UINT TRAY_COMMAND_DELETE_PROGRAM_FILE = 1214;
 void showAboutDialog(HWND hwnd) {
     const wchar_t* title = L"关于 rinp";
     const wchar_t* text =
-        L"rinp\n"
+        L"rinp "
+        L"" WIDEN(APP_VERSION) L"\n"
         L"一个快捷输入工具\n\n"
 
         L"作者: metosank\n"
