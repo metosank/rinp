@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstring>
 #include <vector>
+#include <optional>
 
 namespace {
 
@@ -15,14 +16,81 @@ constexpr size_t MAX_BODY = 8 * 1024;
 constexpr size_t MAX_CONNECTIONS = 1024;
 constexpr DWORD IDLE_TIMEOUT_MS = 30000;
 
+
 constexpr std::string_view kCorsHeaders =
     "Access-Control-Allow-Origin: *\r\n"
     "Access-Control-Allow-Methods: GET, HEAD, POST, OPTIONS\r\n"
     "Access-Control-Allow-Headers: Content-Type\r\n"
     "Access-Control-Max-Age: 3600\r\n"
-    "Connection: close\r\n\r\n";
+    "Connection: close\r\n";
 
 constexpr size_t kCorsHeadersSize = kCorsHeaders.size();
+
+constexpr const char* statusLine(int code) noexcept {
+    switch (code) {
+        case 200: return "200 OK";
+        case 204: return "204 No Content";
+        case 301: return "301 Moved Permanently";
+        case 400: return "400 Bad Request";
+        case 404: return "404 Not Found";
+        case 405: return "405 Method Not Allowed";
+        case 500: return "500 Internal Server Error";
+        case 503: return "503 Service Unavailable";
+        default:  return "500 Internal Server Error";
+    }
+}
+
+std::string buildResponse(
+    std::string_view status,
+    bool isNormalResponse,
+    std::string_view contentType,
+    std::string_view body
+) {
+    std::string out;
+
+    size_t totalSize = 9 + status.size() + 18 + contentType.size() + 2 + body.size();
+    if (isNormalResponse) {
+        totalSize += kCorsHeadersSize + 2;
+    }
+    
+    out.reserve(totalSize);
+    out.append("HTTP/1.1 ");
+    out.append(status);
+    out.append("\r\nContent-Type: ");
+    out.append(contentType);
+    out.append("\r\n");
+    if (isNormalResponse) {
+        out.append(kCorsHeaders);
+        out.append("\r\n");
+    }
+    out.append(body);
+    return out;
+}
+
+std::string buildResponse(
+    int statusCode,
+    std::string_view contentType,
+    std::string_view body
+) {
+    return buildResponse(statusLine(statusCode), statusCode < 300, contentType, body);
+}
+
+
+const std::string kIndexResponse = [] {
+    std::string s =
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/html; charset=utf-8\r\n"
+        "Content-Encoding: gzip\r\n\r\n";
+    s.append(reinterpret_cast<const char*>(HTML_GZIP_DATA), HTML_GZIP_SIZE);
+    return s;
+}();
+
+const auto kOKResponse = buildResponse(200, "text/plain; charset=utf-8", ".");
+const auto kOPTIONSResponse = buildResponse(204, "text/plain; charset=utf-8", "");
+const auto kHEADResponse = buildResponse(200, "text/html; charset=utf-8", "");
+const auto kMETHOD_NOT_ALLOWED_Response = buildResponse(405, "text/plain; charset=utf-8", "405 Method Not Allowed");
+
+
 
 } // namespace
 
@@ -191,9 +259,20 @@ void HttpServer::handleReadable(SOCKET client, ClientState& state) {
         return;
     }
 
-    if (!tryParse(client, state)) {
-        removeClient(client);
+    // 返回空字符串表示直接断开，返回nullopt表示继续等待数据，返回非空字符串表示发送响应
+    auto res = tryParse(client, state);
+
+    if (!res.has_value()) {
+        return;
     }
+
+    auto response = res.value();
+    if(response.empty()) {
+        removeClient(client);
+        return;
+    }
+
+    queueSend(client, state, std::move(response));
 }
 
 void HttpServer::handleWritable(SOCKET client, ClientState& state) {
@@ -213,29 +292,30 @@ void HttpServer::handleWritable(SOCKET client, ClientState& state) {
     }
 }
 
-bool HttpServer::tryParse(SOCKET client, ClientState& state) {
+std::optional<std::string> HttpServer::tryParse(SOCKET client, ClientState& state) {
     if (state.phase == ClientState::Phase::Header) {
         while (true) {
             size_t lineEnd = state.buffer.find("\r\n", state.parseOffset);
             if (lineEnd == std::string::npos) {
-                if (state.buffer.size() > MAX_HEADER) return false;
-                return true;
+                if (state.buffer.size() > MAX_HEADER) return std::string();
+                return std::nullopt;
             }
 
             size_t lineLen = lineEnd - state.parseOffset;
 
             // 解析到空行，表示请求头结束
             if (lineLen == 0) {
+                if(!state.requestLineParsed) {
+                    return std::string();
+                }
+
                 size_t bodyStart = lineEnd + 2;
                 state.buffer.erase(0, bodyStart);
                 state.parseOffset = 0;
 
                 if (state.needsBody) {
                     if (state.contentLength < 0 || (unsigned long long)state.contentLength > MAX_BODY) {
-                        std::string response;
-                        buildResponse(response, "400 Bad Request", "text/plain; charset=utf-8", "400");
-                        queueSend(client, state, std::move(response));
-                        return true;
+                        return buildResponse(400, "text/plain; charset=utf-8", "content-length error");
                     }
                     state.phase = ClientState::Phase::Body;
                     break;
@@ -246,9 +326,9 @@ bool HttpServer::tryParse(SOCKET client, ClientState& state) {
 
             if (!state.requestLineParsed) {
                 if (!parseRequestLine(state.buffer.data() + state.parseOffset, lineLen,
-                                      state.method, state.target)) return false;
+                                      state.method, state.target)) return std::string();
                 state.requestLineParsed = true;
-                if (!onRequestLineParsed(state)) return false;
+                if (!onRequestLineParsed(state)) return std::string();
                 state.needsBody = (state.method == "POST");
             } else if (state.needsBody && state.contentLength < 0) {
                 long long cl = parseContentLengthLine(
@@ -261,8 +341,8 @@ bool HttpServer::tryParse(SOCKET client, ClientState& state) {
     }
 
     if (state.buffer.size() < (size_t)state.contentLength) {
-        if (state.buffer.size() > MAX_BODY) return false;
-        return true;
+        if (state.buffer.size() > MAX_BODY) return std::string();
+        return std::nullopt;
     }
 
     return handleRequest(client, state);
@@ -273,50 +353,38 @@ bool HttpServer::onRequestLineParsed(ClientState& state) {
     return true;
 }
 
-bool HttpServer::handleRequest(SOCKET client, ClientState& state) {
+std::optional<std::string> HttpServer::handleRequest(SOCKET client, ClientState& state) {
+    
     std::string response;
 
+    if (state.method == "GET") {
+        return kIndexResponse;
+    }
+
     if (state.method == "OPTIONS") {
-        buildResponse(response, "204 No Content", "text/plain; charset=utf-8", "");
-        queueSend(client, state, std::move(response));
-        return true;
+        return kOPTIONSResponse;
     }
 
     if (state.method == "HEAD") {
-        buildResponse(response, "200 OK", "text/html; charset=utf-8", "");
-        queueSend(client, state, std::move(response));
-        return true;
-    }
-
-    if (state.method == "GET") {
-        buildGzipResponse(response);
-        queueSend(client, state, std::move(response));
-        return true;
+        return kHEADResponse;
     }
 
     if (state.method != "POST") {
-        buildResponse(response, "405 Method Not Allowed", "text/plain; charset=utf-8",
-                      "405 Method Not Allowed");
-        queueSend(client, state, std::move(response));
-        return true;
+        return kMETHOD_NOT_ALLOWED_Response;
     }
 
     const char* body = state.buffer.data();
     size_t bodyLength = state.buffer.size();
 
     if (bodyLength < 1) {
-        buildResponse(response, "400 Bad Request", "text/plain; charset=utf-8", "400");
-        queueSend(client, state, std::move(response));
-        return true;
+        return buildResponse(400, "text/plain; charset=utf-8", "empty body but need");
     }
 
     unsigned char firstByte = (unsigned char)body[0];
 
     if ((firstByte & 0x80) != 0) {
         if (bodyLength != 1) {
-            buildResponse(response, "400 Bad Request", "text/plain; charset=utf-8", "400");
-            queueSend(client, state, std::move(response));
-            return true;
+            return buildResponse(400, "text/plain; charset=utf-8", "expected 1 byte for action");
         }
 
         unsigned char action = firstByte & 0x7f;
@@ -324,51 +392,44 @@ bool HttpServer::handleRequest(SOCKET client, ClientState& state) {
         if (action == 0x7f) {
             std::string clipboardText;
             if (!clipboardHandler_ || !clipboardHandler_(clipboardText)) {
-                buildResponse(response, "503 Service Unavailable", "text/plain; charset=utf-8",
-                              "clipboard unavailable");
-                queueSend(client, state, std::move(response));
-                return true;
+                return buildResponse(503, "text/plain; charset=utf-8",
+                    "clipboard unavailable");
             }
-            buildResponse(response, "200 OK", "text/plain; charset=utf-8", clipboardText);
-            queueSend(client, state, std::move(response));
-            return true;
+            return buildResponse(200, "text/plain; charset=utf-8", clipboardText);
         }
 
-        if (action != 1 && !actionHandler_(action)) {
-            buildResponse(response, "400 Bad Request", "text/plain; charset=utf-8", "invalid action");
-            queueSend(client, state, std::move(response));
-            return true;
+        if (action == 1) {
+            if(!exitHandler_) {
+                return buildResponse(503, "text/plain; charset=utf-8",
+                    "exit handler unavailable");
+            }
+            exitHandler_();
+            return kOKResponse;
         }
 
-        buildResponse(response, "200 OK", "text/plain; charset=utf-8", ".");
-        queueSend(client, state, std::move(response));
-        if (action == 1 && exitHandler_) exitHandler_();
-        return true;
+        if (actionHandler_(action)) {
+            return kOKResponse;
+        }
+
+        return buildResponse(400, "text/plain; charset=utf-8", "invalid action");
+
     }
 
     if (bodyLength < 2) {
-        buildResponse(response, "400 Bad Request", "text/plain; charset=utf-8", "400");
-        queueSend(client, state, std::move(response));
-        return true;
+        return buildResponse(400, "text/plain; charset=utf-8", "expected at least 2 bytes for input job");
     }
 
     InputJob job;
     job.delayMs = (uint16_t)((firstByte << 8) | (unsigned char)body[1]);
     if (!win32::utf8ToUtf16(body + 2, bodyLength - 2, job.text)) {
-        buildResponse(response, "400 Bad Request", "text/plain; charset=utf-8", "invalid UTF-8");
-        queueSend(client, state, std::move(response));
-        return true;
+        return buildResponse(400, "text/plain; charset=utf-8", "invalid UTF-8");
     }
     if (!jobHandler_(std::move(job))) {
-        buildResponse(response, "503 Service Unavailable", "text/plain; charset=utf-8",
-                      "server is stopping");
-        queueSend(client, state, std::move(response));
-        return true;
+        return buildResponse(503, "text/plain; charset=utf-8",
+            "server is stopping");
     }
 
-    buildResponse(response, "200 OK", "text/plain; charset=utf-8", ".");
-    queueSend(client, state, std::move(response));
-    return true;
+    return kOKResponse;
 }
 
 void HttpServer::queueSend(SOCKET client, ClientState& state, std::string data) {
@@ -377,37 +438,6 @@ void HttpServer::queueSend(SOCKET client, ClientState& state, std::string data) 
     handleWritable(client, state);
 }
 
-void HttpServer::buildResponse(
-    std::string& out,
-    const std::string& status,
-    const std::string& contentType,
-    const std::string& body
-) {
-    out.reserve(9+3+18 + 2+contentType.size() + kCorsHeadersSize + body.size());
-    out.append("HTTP/1.1 ");
-    out.append(status);
-    out.append("\r\nContent-Type: ");
-    out.append(contentType);
-    out.append("\r\n");
-    out.append(kCorsHeaders);
-    out.append(body);
-}
-
-void HttpServer::buildGzipResponse(std::string& out) {
-    static constexpr std::string_view kHeaders =
-        "HTTP/1.1 200 OK\r\n"
-        "Content-Type: text/html; charset=utf-8\r\n"
-        "Content-Encoding: gzip\r\n"
-        "Access-Control-Allow-Origin: *\r\n"
-        "Access-Control-Allow-Methods: GET, HEAD, POST, OPTIONS\r\n"
-        "Access-Control-Allow-Headers: Content-Type\r\n"
-        "Access-Control-Max-Age: 3600\r\n"
-        "Connection: close\r\n\r\n";
-
-    out.reserve(256 + HTML_GZIP_SIZE);
-    out.append(kHeaders);
-    out.append(reinterpret_cast<const char*>(HTML_GZIP_DATA), HTML_GZIP_SIZE);
-}
 
 bool HttpServer::parseRequestLine(
     const char* line,

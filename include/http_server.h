@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
@@ -53,19 +54,11 @@ private:
     void acceptClients();
     void handleReadable(SOCKET client, ClientState& state);
     void handleWritable(SOCKET client, ClientState& state);
-    bool tryParse(SOCKET client, ClientState& state);
-    bool handleRequest(SOCKET client, ClientState& state);
+    std::optional<std::string> tryParse(SOCKET client, ClientState& state);
+    std::optional<std::string> handleRequest(SOCKET client, ClientState& state);
     bool onRequestLineParsed(ClientState& state);
     void queueSend(SOCKET client, ClientState& state, std::string data);
     void removeClient(SOCKET client);
-
-    void buildResponse(
-        std::string& out,
-        const std::string& status,
-        const std::string& contentType,
-        const std::string& body
-    );
-    void buildGzipResponse(std::string& out);
 
     static bool parseRequestLine(
         const char* line,
