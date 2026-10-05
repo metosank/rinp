@@ -83,6 +83,14 @@ LRESULT TrayController::handleMessage(
     WPARAM wParam,
     LPARAM lParam
 ) {
+    if (message == WM_TIMER) {
+        constexpr UINT_PTR kStopCheckTimerId = 0xBEEF;
+        if (wParam == kStopCheckTimerId && stopping_.load()) {
+            EndMenu();
+        }
+        return 0;
+    }
+
     if (message == WM_COMMAND) {
         UINT command = LOWORD(wParam);
         if (command >= TRAY_COMMAND_COPY_ADDRESS_BASE &&
@@ -157,6 +165,11 @@ LRESULT TrayController::handleMessage(
 }
 
 void TrayController::showMenu(HWND hwnd) {
+    if (stopping_.load()) {
+        DestroyWindow(hwnd);
+        return;
+    }
+
     bool hasValidAddresses = refreshLocalAddresses();
 
     HMENU menu = CreatePopupMenu();
@@ -229,8 +242,19 @@ void TrayController::showMenu(HWND hwnd) {
     POINT point = {};
     GetCursorPos(&point);
     SetForegroundWindow(hwnd);
+
+    constexpr UINT_PTR kStopCheckTimerId = 0xBEEF;
+    SetTimer(hwnd, kStopCheckTimerId, 100, nullptr);
+
     TrackPopupMenu(menu, TPM_RIGHTBUTTON, point.x, point.y, 0, hwnd, nullptr);
+    KillTimer(hwnd, kStopCheckTimerId);
     DestroyMenu(menu);
+
+    if (stopping_.load()) {
+        DestroyWindow(hwnd);
+        return;
+    }
+
     PostMessageA(hwnd, WM_NULL, 0, 0);
 }
 
@@ -280,6 +304,7 @@ void TrayController::run() {
         return;
     }
     trayIconVisible_.store(true);
+    hwnd_.store(hwnd);
 
     MSG message = {};
     while (GetMessageA(&message, nullptr, 0, 0) > 0) {
@@ -293,12 +318,21 @@ void TrayController::run() {
 
     if (IsWindow(hwnd)) DestroyWindow(hwnd);
     UnregisterClassA(className, windowClass.hInstance);
+    hwnd_.store(nullptr);
     threadId_.store(0);
 }
 
 void TrayController::stop() {
+    stopping_.store(true);
+    
     DWORD threadId = threadId_.load();
-    if (threadId != 0) PostThreadMessageW(threadId, WM_QUIT, 0, 0);
+    if (threadId != 0) {
+        HWND hwnd = hwnd_.load();
+        if (hwnd && IsWindow(hwnd)) {
+            PostMessageW(hwnd, WM_CANCELMODE, 0, 0);
+        }
+        PostThreadMessageW(threadId, WM_QUIT, 0, 0);
+    }
 }
 
 void TrayController::setVisible(bool visible) {

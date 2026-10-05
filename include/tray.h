@@ -40,5 +40,7 @@ private:
     std::string secretPath_;
     std::vector<std::string> localAddresses_;
     std::atomic<DWORD> threadId_{0};
+    std::atomic<HWND> hwnd_{nullptr};
     std::atomic<bool> trayIconVisible_{false};
+    std::atomic<bool> stopping_{false};
 };
